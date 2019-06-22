@@ -13,4 +13,9 @@
 
 .idea/
 
+#bin
+minion-x64-darwin
+minion-x64-linux
+minion-x64.exe
+
 
