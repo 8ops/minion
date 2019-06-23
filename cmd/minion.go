@@ -2,28 +2,49 @@ package main
 
 import (
 	"flag"
+	"fmt"
 	"github.com/satori/go.uuid"
 	"github.com/sevlyar/go-daemon"
-	"log"
+	"k8s.io/klog"
 	"os"
 	"syscall"
 	"time"
 )
 
 var (
-	signal = flag.String("s", "", `Send signal to the daemon:
+	version = "0.0.1-20190623"
+	verbose = flag.Bool("v", false, "Show version number and quit")
+	signal  = flag.String("s", "", `Send signal to the daemon:
 quit — graceful shutdown
 stop — fast shutdown
 reload — reloading the configuration file`)
+
+	stop = make(chan struct{})
+	done = make(chan struct{})
 )
 
 func main() {
+	klog.InitFlags(&flag.FlagSet{})
+	defer klog.Flush()
+
+	flag.Usage = func() {
+		fmt.Printf("minion/%s\nUsage: minion [-vh] [-s signal] \n\n", version)
+		fmt.Printf("Options:\n")
+		flag.PrintDefaults()
+	}
 	flag.Parse()
+
+	//show version
+	if *verbose {
+		fmt.Printf("impower/%s\n", version)
+		os.Exit(0)
+	}
+
 	daemon.AddCommand(daemon.StringFlag(signal, "quit"), syscall.SIGQUIT, termHandler)
 	daemon.AddCommand(daemon.StringFlag(signal, "stop"), syscall.SIGTERM, termHandler)
 	daemon.AddCommand(daemon.StringFlag(signal, "reload"), syscall.SIGHUP, reloadHandler)
 
-	cntxt := &daemon.Context{
+	ctx := &daemon.Context{
 		PidFileName: "/tmp/minion.pid",
 		PidFilePerm: 0644,
 		LogFileName: "/tmp/minion.log",
@@ -34,57 +55,49 @@ func main() {
 	}
 
 	if len(daemon.ActiveFlags()) > 0 {
-		d, err := cntxt.Search()
+		d, err := ctx.Search()
 		if err != nil {
-			log.Fatalf("Unable send signal to the daemon: %s", err.Error())
+			klog.Fatalf("Unable send signal to the daemon: %s\n", err.Error())
 		}
 		daemon.SendCommands(d)
 		return
 	}
 
-	d, err := cntxt.Reborn()
+	d, err := ctx.Reborn()
 	if err != nil {
-		log.Fatalln(err)
+		klog.Fatalln(err)
 	}
 	if d != nil {
 		return
 	}
-	defer cntxt.Release()
+	defer ctx.Release()
 
-	log.Println("- - - - - - - - - - - - - - -")
-	log.Println("daemon started")
+	klog.Info("Daemon started")
 
 	go worker(uuid.NewV4().String()[:8])
 
 	err = daemon.ServeSignals()
 	if err != nil {
-		log.Printf("Error: %s", err.Error())
+		klog.Errorf("Error: %s", err.Error())
 	}
 
-	log.Println("daemon terminated")
+	klog.Info("Daemon terminated")
 }
 
-var (
-	stop = make(chan struct{})
-	done = make(chan struct{})
-)
-
 func worker(tid string) {
-	go func() { //业务逻辑在此处
+	//process
+	go func() {
 		//defer recover()
 		for {
-			log.Printf("worker,tid[%s],%s", tid, time.Now().String())
+			klog.Infof("Worker[process],tid[%s],%s", tid, time.Now().String())
 			time.Sleep(time.Second)
 		}
 	}()
 
-	//LOOP:
 	for {
-		log.Printf("loop,tid[%s],%s", tid, time.Now().String())
-		time.Sleep(time.Second) // this is work to be done by worker.
+		time.Sleep(time.Second)
 		select {
 		case <-stop:
-			//break LOOP
 			goto EXIT
 		default:
 		}
@@ -94,7 +107,7 @@ EXIT:
 }
 
 func termHandler(sig os.Signal) error {
-	log.Println("terminating...")
+	klog.Info("Terminating...")
 	stop <- struct{}{}
 	if sig == syscall.SIGQUIT {
 		<-done
@@ -103,6 +116,6 @@ func termHandler(sig os.Signal) error {
 }
 
 func reloadHandler(sig os.Signal) error {
-	log.Println("configuration reloaded")
+	klog.Info("Configuration reloaded")
 	return nil
 }

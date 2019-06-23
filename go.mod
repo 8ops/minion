@@ -9,4 +9,5 @@ require (
 	github.com/sevlyar/go-daemon v0.1.5
 	golang.org/x/sys v0.0.0-20190602015325-4c4f7f33c9ed // indirect
 	gopkg.in/check.v1 v1.0.0-20180628173108-788fd7840127 // indirect
+	k8s.io/klog v0.3.2
 )
